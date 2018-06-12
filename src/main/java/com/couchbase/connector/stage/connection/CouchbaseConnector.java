@@ -6,6 +6,8 @@
 package com.couchbase.connector.stage.connection;
 
 import com.couchbase.client.core.BackpressureException;
+import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.retry.BestEffortRetryStrategy;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.java.util.retry.RetryBuilder;
 import com.couchbase.client.java.AsyncBucket;
@@ -17,9 +19,10 @@ import com.couchbase.client.java.document.JsonStringDocument;
 import com.couchbase.client.java.document.json.JsonObject;
 import com.couchbase.client.java.env.CouchbaseEnvironment;
 import com.couchbase.client.java.env.DefaultCouchbaseEnvironment;
+import com.couchbase.client.java.query.AsyncN1qlQueryRow;
 import com.couchbase.client.java.query.N1qlQuery;
 import com.couchbase.client.java.query.N1qlQueryResult;
-import com.couchbase.connector.stage.destination.CouchbaseConnectorTarget;
+import com.couchbase.connector.stage.destination.CouchbaseN1QLConnectorTarget;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -45,23 +48,10 @@ public class CouchbaseConnector {
     
    
     
-    private static final Logger LOG = LoggerFactory.getLogger(CouchbaseConnectorTarget.class);
+    private static final Logger LOG = LoggerFactory.getLogger(CouchbaseN1QLConnectorTarget.class);
     
     
-    /**
-     * CouchbaseConnector                           
-     * <p>
-     * Constructor methods which takes standard connection parameters for a Couchbase Cluster (Version 4)
-     * <p>
-     *
-     * @param  url URL Endpoint to the Couchbase Cluster.          
-     * @param  bucket Couchbase Bucket Name
-     * @param  bucketPassword Couchbase Bucket password
-     */
-    private CouchbaseConnector(String url, String bucket, String bucketPassword) {
-        connectToCouchbaseServer(url, bucket, bucketPassword);
-       
-    }
+   
     
     /**
      * CouchbaseConnector                           
@@ -78,33 +68,6 @@ public class CouchbaseConnector {
         connectToCouchbaseServer(urlString, bucketString, userName, userPassword);
     }
     
-    
-    /**
-     * connectToCouchbaseServer                           
-     * <p>
-     * Connection method to version 4
-     * <p>
-     *
-     * @param  url URL Endpoint to the Couchbase Cluster.          
-     * @param  bucketName Couchbase Bucket Name
-     * @param  bucketPassword Couchbase Bucket password
-     */
-    private void connectToCouchbaseServer(String url, String bucketName, String bucketPassword) {
-        CouchbaseEnvironment env = DefaultCouchbaseEnvironment.builder()
-                .build();
-        
-        //Init Couchbase
-        cluster  = CouchbaseCluster.create(env, url);
-        
-        try {
-            bucket = cluster.openBucket(bucketName, bucketPassword);
-            LOG.info("Connected to Couchbase version 4");
-        } catch (Exception e) {
-            LOG.info("Exception" + e + " occurred while connecting to Couchbase version 4");
-            e.printStackTrace();
-        }
-    }
-    
         /**
      * connectToCouchbaseServer                           
      * <p>
@@ -117,12 +80,16 @@ public class CouchbaseConnector {
      * @param  userPassword Couchbase Couchbase User password
      */
     private void connectToCouchbaseServer(String url, String bucketName, String userName, String userPassword) {
-      //  CouchbaseEnvironment env = DefaultCouchbaseEnvironment.builder()
-        //        .build();
+        CouchbaseEnvironment env = DefaultCouchbaseEnvironment
+                .builder()
+                .retryStrategy(BestEffortRetryStrategy.INSTANCE)
+                .build();
+             
         
         //Init Couchbase
-        cluster  = CouchbaseCluster.create(url);
+        cluster  = CouchbaseCluster.create(env, url);
         cluster.authenticate(userName, userPassword);
+       
         try {
             bucket = cluster.openBucket(bucketName);
             LOG.info("Connected to Couchbase version 5");
@@ -132,21 +99,6 @@ public class CouchbaseConnector {
         }
        
         
-    }
-
-    /**
-     * connectToCouchbaseServer                           
-     * <p>
-     * Get an instance to connect to Couchbase Version 4
-     * <p>
-     *
-     * @param  url URL Endpoint to the Couchbase Cluster.          
-     * @param  bucket Couchbase Bucket Name
-     * @param  password Couchbase Bucket password
-     */
-    public static CouchbaseConnector getInstance(String url, String bucket, String password) {
-        
-        return new CouchbaseConnector(url, bucket, password);
     }
     
         /**
@@ -166,71 +118,34 @@ public class CouchbaseConnector {
     }
         
      /**
-     * writeToBucket 
+     * queryBucket 
      * <p>
-     * writeToBucket synchronously upserts JSON documents into Couchbase
+     * Send a N1QL query to Couchbase Bucket
      * <p>
      *
-     * @param  documentKey Unique key of the JSON Document.          
-     * @param  jsonObject The JSON Object i.e document body.
+     * @param  queryString N1QL Query.          
      */    
     
-    public void writeToBucket(String documentKey, JsonObject jsonObject) {
-        
-        JsonDocument document = JsonDocument.create(documentKey, jsonObject);
-        bucket.upsert(document);
-    }
+    public N1qlQueryResult queryBucket(String query) {
     
-    public void writeToBucket(String jsonObject) {
+        // Construct Query
+        N1qlQuery n1qlQuery = N1qlQuery.simple(query);
         
-        JsonStringDocument doc = JsonStringDocument.create(jsonObject);
-        LOG.info("Upserting JSON Document - " + jsonObject);
-        bucket.upsert(doc);
-    }
+        N1qlQueryResult result = bucket.query(n1qlQuery);
+        /*
+        bucket.async()
+            .query(n1qlQuery)
+            .flatMap(result ->
+                result.errors()
+                .flatMap(e -> Observable.<AsyncN1qlQueryRow>error(new CouchbaseException("N1QL Error/Warning: " + e)))
+                .switchIfEmpty(result.rows())
+            )
+            .map(AsyncN1qlQueryRow::value)
+            .subscribe(
+                rowContent -> System.out.println(rowContent),
+                runtimeError -> runtimeError.printStackTrace()
+            ); */
         
-    public void writeToBucket(List<JsonDocument> docs) {
-        
-        for (JsonDocument document : docs) {
-            bucket.upsert(document);
-        }
-        
-    }
-    
-     /**
-     * bulkSet 
-     * <p>
-     * bulkSet asynchronously bulk upserts JSON documents into Couchbase.
-     * <p>
-     *
-     * @param  docs A List of JsonDocuments.          
-     */ 
-    public void bulkSet(List<JsonDocument> docs) {
-        final AsyncBucket asyncBucket = bucket.async();
-        
-        Observable
-                .from(docs)
-                .flatMap(new Func1<JsonDocument, Observable<JsonDocument>>() {
-                    @SuppressWarnings("unchecked")
-                    @Override
-                    public Observable<JsonDocument> call(JsonDocument document) {
-                        return asyncBucket.upsert(document)
-                                .retryWhen(RetryBuilder
-                                    .anyOf(BackpressureException.class)
-                                    .delay(Delay.exponential(TimeUnit.MILLISECONDS, 10))
-                                    .max(10)
-                                    .build());
-                    }
-                })
-                .last()
-                .toBlocking()
-                .single();           
-    }
-    
-    public N1qlQueryResult queryBucket(String documentType) {
-    
-        // Perform a N1QL Query
-        N1qlQueryResult result = bucket.query(N1qlQuery.simple("SELECT * FROM " + documentType));
-    
         return result;
     }
     

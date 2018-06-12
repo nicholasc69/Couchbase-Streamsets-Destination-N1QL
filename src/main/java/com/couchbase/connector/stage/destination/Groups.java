@@ -5,7 +5,7 @@ import com.streamsets.pipeline.api.Label;
 
 @GenerateResourceBundle
 public enum Groups implements Label {
-  COUCHBASE_TARGET("Couchbase Destination"),
+  COUCHBASE_N1QL_TARGET("Couchbase Destination - N1QL"),
   ;
 
   private final String label;

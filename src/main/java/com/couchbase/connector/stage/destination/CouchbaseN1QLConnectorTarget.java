@@ -52,15 +52,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This target is a used to connect to a Couchbase NoSQL Database.
+ * This target is a used to connect to a Couchbase NoSQL Database VIA N1QL.
  */
-public abstract class CouchbaseConnectorTarget extends BaseTarget {
+public abstract class CouchbaseN1QLConnectorTarget extends BaseTarget {
     
     private CouchbaseConnector connector;
     
     private DataGeneratorFactory generatorFactory;
     
-    private static final Logger LOG = LoggerFactory.getLogger(CouchbaseConnectorTarget.class);
+    private static final Logger LOG = LoggerFactory.getLogger(CouchbaseN1QLConnectorTarget.class);
     
     private static final String CUS_DOC_KEY_RESOURCE_NAME = "customDocumentKey";
     private ELEval customDocKeyEvals;
@@ -77,13 +77,10 @@ public abstract class CouchbaseConnectorTarget extends BaseTarget {
     customDocKeyVars = getContext().createELVars();
     
     //Connect to Couchbase DB
-    LOG.info("Connecting to Couchbase " + getCouchbaseVersion() +  " with details: " + getURL() + " " + getBucket());
+    LOG.info("Connecting to Couchbase " +  " with details: " + getURL() + " " + getBucket());
     
-    //Check Couchbase Version
-    if (getCouchbaseVersion() == CouchbaseVersionTypes.VERSION4)
-        connector = CouchbaseConnector.getInstance(getURL(), getBucket(), getBucketPassword());
-    else
-        connector = CouchbaseConnector.getInstance(getURL(), getBucket(), getUserName(), getUserPassword());
+    //Connect to Couchbase
+    connector = CouchbaseConnector.getInstance(getURL(), getBucket(), getUserName(), getUserPassword());
     
     //Data Generator for JSON Objects to Couchbase
     DataGeneratorFactoryBuilder builder = new DataGeneratorFactoryBuilder(
@@ -145,68 +142,36 @@ public abstract class CouchbaseConnectorTarget extends BaseTarget {
       }
     }
     
+    //Create INSERT/UPDATE Stament for N1QL Insert/Update
     if (documentList.size() > 0) {
+        //n1QL String
+        String n1qlStatement = "INSERT INTO `" + getBucket() + "` (KEY, VALUE) ";
+        
         LOG.info("Writing BATCH with " + documentList.size() + " number of records. ");
-
-        //Write Batch to Couchbase
-        connector.bulkSet(documentList); //Not working for some reason
-        try {
-            //connector.writeToBucket(documentList);
-            Thread.sleep(10);
-        } catch (InterruptedException ex) {
-            LOG.error(ex.getMessage());
+        
+        //Add JSON Values to N1QL Statement
+        Iterator<JsonDocument> documentIterator =  documentList.iterator();
+        
+        while (documentIterator.hasNext()) {
+            JsonDocument jsonDoc = documentIterator.next();
+            JsonObject jsonObject = jsonDoc.content();
+            
+            String valueString = "VALUES ( \"" + jsonDoc.id() + "\",  " + jsonObject.toString() + "), ";
+            n1qlStatement = n1qlStatement + valueString;
         }
+        
+        //Remove last comman and replace with inverted comma
+        n1qlStatement = n1qlStatement.substring(0, n1qlStatement.length() - 2);
+        n1qlStatement = n1qlStatement + ";";
+        LOG.debug("STATEMENT " + n1qlStatement);
+        
+        //Write Batch to Couchbase
+        connector.queryBucket(n1qlStatement); 
+        
     }
         LOG.info("Batch size is zero");
     
     
-  }
-
-  /**
-   * Writes a single record to the destination.
-   *
-   * @param record the record to write to the destination.
-   * @throws OnRecordErrorException when a record cannot be written.
-   */
-  private void write(Record record) throws OnRecordErrorException {
-    try {
-        //Generate data from the record object and create JsonObject from byte ARRAY String   
-        //LOG.info("Here is the record: " + record);
-        ByteArrayOutputStream baos = new ByteArrayOutputStream(4096);
-        DataGenerator generator = generatorFactory.getGenerator(baos);
-        generator.write(record);
-        generator.close();
-        JsonObject jsonObject = JsonObject.fromJson(new String(baos.toByteArray()));
-        
-        //LOG.info("DATA - " + jsonObject);
-        
-        //Either get key JSON or generate unique one
-        Object keyObject = null;
-        
-        if (generateDocumentKey()) {
-            UUID uuid = UUID.randomUUID();
-            keyObject = uuid.toString();
-        }
-        else {
-            keyObject = jsonObject.get(getDocumentKey());
-            if (keyObject == null)
-                throw new NullPointerException("Document Key is Null");
-        }
-        
-        String keyString = keyObject.toString();
-        
-        //Write to Couchbase DB
-        //LOG.info("Writing record with key - " + keyString + " - to Couchbase");
-        //connector.writeToBucketBatch(keyString, jsonObject);
-        connector.writeToBucket(keyString, jsonObject);
-        
-    } catch (NullPointerException ne) {
-        LOG.error(ne.getMessage());
-    } catch (IOException ioe) {
-        LOG.error(ioe.getMessage());
-    } catch (DataGeneratorException dge) {
-        LOG.error(dge.getMessage());
-    }
   }
  
   private JsonDocument getJsonDocument(Record record) {
@@ -231,11 +196,7 @@ public abstract class CouchbaseConnectorTarget extends BaseTarget {
             keyObject = uuid.toString();
         }
         else {
-            //Check Document Key Type
-            if (getDocumentType() == CouchbaseDocumentKeyTypes.FIELD)
-                keyObject = jsonObject.get(getDocumentKey());
-            else
-                keyObject = getCustomDocumentKeyValue(getCustomDocumentKey(), record);
+            keyObject = getCustomDocumentKeyValue(getCustomDocumentKey(), record);
                 
                 
             if (keyObject == null)
@@ -268,19 +229,11 @@ public abstract class CouchbaseConnectorTarget extends BaseTarget {
   public abstract String getUserName();
   
   public abstract String getUserPassword();
-  
-  public abstract String getBucketPassword();
-  
+   
   public abstract String getBucket();
-  
-  public abstract String getDocumentKey();
   
   public abstract boolean generateDocumentKey();
   
-  public abstract CouchbaseVersionTypes getCouchbaseVersion();
-  
   public abstract String getCustomDocumentKey();
   
-  public abstract CouchbaseDocumentKeyTypes getDocumentType();
-
 }
