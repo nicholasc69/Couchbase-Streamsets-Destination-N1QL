@@ -1,6 +1,6 @@
-#Building Couchbase Destination for Streamset
+#Building Couchbase Destination N1QL for Streamset
 
-To build the *Couchbase-Streamset-Destination* the following are required on the system:
+To build the *Couchbase-Streamset-Destination-N1QL* the following are required on the system:
 
 * GIT
 * Apache Maven 3.3.9
@@ -9,7 +9,7 @@ To build the *Couchbase-Streamset-Destination* the following are required on the
 
 1. Get the project from GitHub.
 
-    * Clone the project from GitHub using: https://github.com/nicholasc69/CouchbaseConnector.git
+    * Clone the project from GitHub using: https://github.com/nicholasc69/Couchbase-Streamsets-Destination-N1QL.git
 
 2. Clone and install the following Streamsets repositories from Streamsets (clone the 3.1.0.0 branch)
     * Streamsets API
